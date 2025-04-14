@@ -1,0 +1,29 @@
+server:
+  port: 8080
+  readTimeout: 10s
+  writeTimeout: 10s
+  idleTimeout: 60s
+
+database:
+  driver: postgres
+  host: postgres
+  port: 5432
+  user: ehass_user
+  password: ehass_password
+  name: ehass_db
+  sslmode: disable
+  maxOpen: 25
+  maxIdle: 5
+  lifetime: 5m
+
+auth:
+  accessTokenSecret: your-access-token-secret-key-here
+  refreshTokenSecret: your-refresh-token-secret-key-here
+  accessTokenExpiry: 1h
+  refreshTokenExpiry: 168h
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0

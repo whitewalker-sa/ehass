@@ -1,31 +1,40 @@
-ARG GO_VERSION=1.24.1
-# 1. Base image with Go installed
-FROM golang:${GO_VERSION} AS builder
+# Build stage
+ARG GO_VERSION=1.24
+FROM golang:${GO_VERSION} as builder
 
-# 2. Set working directory inside container
 WORKDIR /app
 
-# 3. Copy go.mod and go.sum before the rest (for better caching)
+# Copy go mod and sum files
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 4. Copy the entire source code
+# Copy source code
 COPY . .
 
-# 5. Build the Go binary
-RUN go build -o bine/curawize_backend ./cmd/server
+# Build the application with staging configuration
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ehass ./cmd/server
 
-# 6. Use a minimal final image (alpine-based)
+# Final stage
 FROM alpine:latest
 
-# 7. Set working dir in runtime container
+# Add CA certificates and timezone data
+RUN apk --no-cache add ca-certificates tzdata
+
+# Create a non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 WORKDIR /app
 
-# 8. Copy the binary from builder stage
-COPY --from=builder /app/curawize_backend .
+# Copy the binary from builder
+COPY --from=builder /app/ehass .
+# Copy staging config
+COPY --from=builder /app/configs/config.yaml ./configs/
 
-# 9. Expose the port your app listens on (adjust if needed)
+# Use the non-root user
+USER appuser
+
+# Expose port
 EXPOSE 8080
 
-# 10. Run the app
-CMD ["./curawize_backend"]
+# Run the binary
+CMD ["./ehass"]

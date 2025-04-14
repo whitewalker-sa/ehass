@@ -1,20 +1,22 @@
 services:
   dev:
-    container_name: backend_dev
+    container_name: api_dev 
     build:
       context: .
       dockerfile: deployments/docker/Dockerfile.dev
     volumes:
-      - .:/workspaces/curawize_backend               # Mount code into container
+      - .:/workspaces/ehass               # Mount code into container
       - air_tmp:/app/tmp       # Prevent Air from watching tmp
     ports:
       - "8080:8080"
     command: air
     environment:
       - GO_ENV=development
+    depends_on:
+      - postgres
 
   prod:
-    container_name: backend_prod
+    container_name: api_prod
     build:
       context: .
       dockerfile: deployments/docker/Dockerfile.prod
@@ -22,7 +24,27 @@ services:
       - "8081:8080"
     environment:
       - GO_ENV=production
-    command: ["./curawize_backend"]
+    command: ["./ehass"]
+    depends_on:
+      - postgres
+      
+  postgres:
+    image: postgres:latest
+    container_name: ehass_postgres
+    environment:
+      - POSTGRES_USER=ehass_user
+      - POSTGRES_PASSWORD=ehass_password
+      - POSTGRES_DB=ehass_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ehass_user -d ehass_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   air_tmp:
+  postgres_data:

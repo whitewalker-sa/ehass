@@ -1,17 +1,22 @@
-# Load environment variables from .env file
-include .env
+# Load environment variables from .env file if it exists
+-include .env
 
-# Project Variables
-APP_NAME := $(APP_NAME)
-GO_VERSION := $(GO_VERSION)
+# Project Variables with defaults in case .env is missing
+APP_NAME ?= ehass
+GO_VERSION ?= 1.21
 
 # Docker image names
 DOCKER_IMAGE_DEV := $(APP_NAME):dev
 DOCKER_IMAGE_PROD := $(APP_NAME):prod
+DOCKER_IMAGE_STAG := $(APP_NAME):stag
 
 # Default target
 .PHONY: all
 all: build
+
+# Build target depends on build-dev by default
+.PHONY: build
+build: build-dev
 
 # Build the Docker image (dev environment)
 .PHONY: build-dev
@@ -23,6 +28,11 @@ build-dev:
 build-prod:
 	docker build --build-arg GO_VERSION=$(GO_VERSION) -t $(DOCKER_IMAGE_PROD) -f deployments/docker/Dockerfile.prod .
 
+# Build the Docker image (staging environment)
+.PHONY: build-stag
+build-stag:
+	docker build --build-arg GO_VERSION=$(GO_VERSION) -t $(DOCKER_IMAGE_STAG) -f deployments/docker/Dockerfile.stag .
+
 # Run the Docker container (dev environment)
 .PHONY: run-dev
 run-dev:
@@ -33,6 +43,11 @@ run-dev:
 run-prod:
 	docker compose -f docker-compose.yml up --build prod
 
+# Run just the database
+.PHONY: run-db
+run-db:
+	docker compose -f docker-compose.yml up -d postgres
+
 # Stop running Docker containers
 .PHONY: stop
 stop:
@@ -42,6 +57,18 @@ stop:
 .PHONY: init
 init:
 	docker run --rm -v $(PWD):/app -w /app golang:$(GO_VERSION) go mod tidy
+
+# Generate Swagger documentation
+.PHONY: swagger
+swagger:
+	docker run --rm -v $(PWD):/app -w /app -e GOPATH=/go quay.io/goswagger/swagger generate spec -o ./internal/docs/swagger.json --scan-models
+	@echo "Swagger docs generated at ./internal/docs/swagger.json"
+
+# Run the swag tool to generate Swagger docs (requires swag installed)
+.PHONY: swaggo
+swaggo:
+	docker run --rm -v $(PWD):/app -w /app golang:$(GO_VERSION) sh -c "go install github.com/swaggo/swag/cmd/swag@latest && /go/bin/swag init -g cmd/server/main.go -o internal/docs"
+	@echo "Swagger docs generated at ./internal/docs"
 
 # Run tests (inside Docker container)
 .PHONY: test
