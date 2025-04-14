@@ -1,0 +1,31 @@
+ARG GO_VERSION=1.24.1
+# 1. Base image with Go installed
+FROM golang:${GO_VERSION} AS builder
+
+# 2. Set working directory inside container
+WORKDIR /app
+
+# 3. Copy go.mod and go.sum before the rest (for better caching)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 4. Copy the entire source code
+COPY . .
+
+# 5. Build the Go binary
+RUN go build -o bine/curawize_backend ./cmd/server
+
+# 6. Use a minimal final image (alpine-based)
+FROM alpine:latest
+
+# 7. Set working dir in runtime container
+WORKDIR /app
+
+# 8. Copy the binary from builder stage
+COPY --from=builder /app/curawize_backend .
+
+# 9. Expose the port your app listens on (adjust if needed)
+EXPOSE 8080
+
+# 10. Run the app
+CMD ["./curawize_backend"]

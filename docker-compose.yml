@@ -1,0 +1,28 @@
+services:
+  dev:
+    container_name: backend_dev
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.dev
+    volumes:
+      - .:/workspaces/curawize_backend               # Mount code into container
+      - air_tmp:/app/tmp       # Prevent Air from watching tmp
+    ports:
+      - "8080:8080"
+    command: air
+    environment:
+      - GO_ENV=development
+
+  prod:
+    container_name: backend_prod
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile.prod
+    ports:
+      - "8081:8080"
+    environment:
+      - GO_ENV=production
+    command: ["./curawize_backend"]
+
+volumes:
+  air_tmp:

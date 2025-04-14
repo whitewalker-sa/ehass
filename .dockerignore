@@ -1,0 +1,8 @@
+.git
+.vscode/*
+.vscode
+node_modules
+tmp
+.env
+bin
+bin/*
