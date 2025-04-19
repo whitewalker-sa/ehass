@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/whitewalker-sa/ehass/internal/model"
@@ -33,55 +34,31 @@ func NewAppointmentService(
 }
 
 // CreateAppointment creates a new appointment
-func (s *appointmentService) CreateAppointment(ctx context.Context, appointment *model.Appointment) error {
-	// Validate doctor exists
-	doctor, err := s.doctorRepo.FindByID(ctx, appointment.DoctorID)
+func (s *appointmentService) CreateAppointment(ctx context.Context, patientID, doctorID uint, date, timeStr string, reason string) (*model.Appointment, error) {
+	// Parse date and time strings
+	dateTime, err := parseDateTime(date, timeStr)
 	if err != nil {
-		return errors.New("doctor not found")
+		return nil, errors.New("invalid date or time format")
 	}
 
-	// Validate patient exists
-	_, err = s.patientRepo.FindByID(ctx, appointment.PatientID)
-	if err != nil {
-		return errors.New("patient not found")
+	// Create appointment model
+	appointment := &model.Appointment{
+		PatientID:      patientID,
+		DoctorID:       doctorID,
+		ScheduledStart: dateTime,
+		ScheduledEnd:   dateTime.Add(30 * time.Minute),
+		Reason:         reason,
+		Status:         model.AppointmentStatusPending,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
-	// Validate appointment time
-	if appointment.ScheduledStart.Before(time.Now()) {
-		return errors.New("appointment cannot be scheduled in the past")
+	// Call repository to save appointment
+	if err := s.appointmentRepo.Create(ctx, appointment); err != nil {
+		return nil, fmt.Errorf("failed to create appointment: %w", err)
 	}
 
-	if appointment.ScheduledEnd.Before(appointment.ScheduledStart) {
-		return errors.New("appointment end time must be after start time")
-	}
-
-	// Check for overlapping appointments for doctor
-	overlappingAppointments, _, err := s.appointmentRepo.FindByDateRange(
-		ctx,
-		doctor.ID,
-		appointment.ScheduledStart.Format(time.RFC3339),
-		appointment.ScheduledEnd.Format(time.RFC3339),
-		100, 0, // Fetch up to 100 appointments in this range
-	)
-	if err != nil {
-		s.logger.Error("Failed to check overlapping appointments", zap.Error(err))
-		return errors.New("failed to check doctor's schedule")
-	}
-
-	for _, existing := range overlappingAppointments {
-		if existing.Status != model.AppointmentStatusCancelled &&
-			((appointment.ScheduledStart.Before(existing.ScheduledEnd) &&
-				appointment.ScheduledEnd.After(existing.ScheduledStart)) ||
-				(appointment.ScheduledStart.Equal(existing.ScheduledStart))) {
-			return errors.New("appointment time conflicts with an existing appointment")
-		}
-	}
-
-	// Set initial status
-	appointment.Status = model.AppointmentStatusPending
-
-	// Create appointment
-	return s.appointmentRepo.Create(ctx, appointment)
+	return appointment, nil
 }
 
 // GetAppointmentByID gets an appointment by ID
@@ -101,64 +78,80 @@ func (s *appointmentService) GetDoctorAppointments(ctx context.Context, doctorID
 	return s.appointmentRepo.FindByDoctorID(ctx, doctorID, pageSize, offset)
 }
 
-// GetDoctorSchedule gets a doctor's schedule for a specific date range
-func (s *appointmentService) GetDoctorSchedule(ctx context.Context, doctorID uint, startDate, endDate string, page, pageSize int) ([]*model.Appointment, int64, error) {
+// GetDoctorAppointmentsByDateRange gets a doctor's appointments for a specific date range
+func (s *appointmentService) GetDoctorAppointmentsByDateRange(ctx context.Context, doctorID uint, startDate, endDate string, page, pageSize int) ([]*model.Appointment, int64, error) {
 	offset := (page - 1) * pageSize
 	return s.appointmentRepo.FindByDateRange(ctx, doctorID, startDate, endDate, pageSize, offset)
 }
 
 // UpdateAppointment updates an appointment
-func (s *appointmentService) UpdateAppointment(ctx context.Context, appointment *model.Appointment) error {
+func (s *appointmentService) UpdateAppointment(ctx context.Context, id uint, date, timeStr, status, reason string) (*model.Appointment, error) {
 	// Get existing appointment
-	existingAppointment, err := s.appointmentRepo.FindByID(ctx, appointment.ID)
+	existingAppointment, err := s.appointmentRepo.FindByID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Check if appointment can be modified
 	if existingAppointment.Status == model.AppointmentStatusCompleted ||
 		existingAppointment.Status == model.AppointmentStatusCancelled {
-		return errors.New("cannot update a completed or cancelled appointment")
+		return nil, errors.New("cannot update a completed or cancelled appointment")
 	}
 
-	// Check for time conflicts if time is being updated
-	if !appointment.ScheduledStart.Equal(existingAppointment.ScheduledStart) ||
-		!appointment.ScheduledEnd.Equal(existingAppointment.ScheduledEnd) {
-		// Validate appointment time
-		if appointment.ScheduledStart.Before(time.Now()) {
-			return errors.New("appointment cannot be scheduled in the past")
+	// Update fields that were provided
+	if date != "" && timeStr != "" {
+		scheduledStart, err := parseDateTime(date, timeStr)
+		if err != nil {
+			return nil, errors.New("invalid date or time format")
 		}
 
-		if appointment.ScheduledEnd.Before(appointment.ScheduledStart) {
-			return errors.New("appointment end time must be after start time")
+		// Validate appointment time
+		if scheduledStart.Before(time.Now()) {
+			return nil, errors.New("appointment cannot be scheduled in the past")
 		}
+
+		existingAppointment.ScheduledStart = scheduledStart
+		existingAppointment.ScheduledEnd = scheduledStart.Add(30 * time.Minute)
 
 		// Check for overlapping appointments
 		overlappingAppointments, _, err := s.appointmentRepo.FindByDateRange(
 			ctx,
-			appointment.DoctorID,
-			appointment.ScheduledStart.Format(time.RFC3339),
-			appointment.ScheduledEnd.Format(time.RFC3339),
+			existingAppointment.DoctorID,
+			existingAppointment.ScheduledStart.Format(time.RFC3339),
+			existingAppointment.ScheduledEnd.Format(time.RFC3339),
 			100, 0, // Fetch up to 100 appointments in this range
 		)
 		if err != nil {
 			s.logger.Error("Failed to check overlapping appointments", zap.Error(err))
-			return errors.New("failed to check doctor's schedule")
+			return nil, errors.New("failed to check doctor's schedule")
 		}
 
 		for _, existing := range overlappingAppointments {
-			if existing.ID != appointment.ID &&
+			if existing.ID != existingAppointment.ID &&
 				existing.Status != model.AppointmentStatusCancelled &&
-				((appointment.ScheduledStart.Before(existing.ScheduledEnd) &&
-					appointment.ScheduledEnd.After(existing.ScheduledStart)) ||
-					(appointment.ScheduledStart.Equal(existing.ScheduledStart))) {
-				return errors.New("appointment time conflicts with an existing appointment")
+				((existingAppointment.ScheduledStart.Before(existing.ScheduledEnd) &&
+					existingAppointment.ScheduledEnd.After(existing.ScheduledStart)) ||
+					(existingAppointment.ScheduledStart.Equal(existing.ScheduledStart))) {
+				return nil, errors.New("appointment time conflicts with an existing appointment")
 			}
 		}
 	}
 
+	if status != "" {
+		existingAppointment.Status = model.AppointmentStatus(status)
+	}
+
+	if reason != "" {
+		existingAppointment.Reason = reason
+	}
+
 	// Update appointment
-	return s.appointmentRepo.Update(ctx, appointment)
+	if err := s.appointmentRepo.Update(ctx, existingAppointment); err != nil {
+		s.logger.Error("Failed to update appointment", zap.Error(err))
+		return nil, errors.New("failed to update appointment")
+	}
+
+	return existingAppointment, nil
 }
 
 // CancelAppointment cancels an appointment
@@ -185,7 +178,13 @@ func (s *appointmentService) CancelAppointment(ctx context.Context, id uint) err
 	return s.appointmentRepo.Update(ctx, appointment)
 }
 
-// CompleteAppointment marks an appointment as completed
+// Helper function to parse date and time strings
+func parseDateTime(date, timeStr string) (time.Time, error) {
+	dateTimeStr := date + " " + timeStr
+	return time.Parse("2006-01-02 15:04", dateTimeStr)
+}
+
+// CompleteAppointment marks an appointment as completed with notes
 func (s *appointmentService) CompleteAppointment(ctx context.Context, id uint, notes string) error {
 	// Get appointment
 	appointment, err := s.appointmentRepo.FindByID(ctx, id)
@@ -194,12 +193,22 @@ func (s *appointmentService) CompleteAppointment(ctx context.Context, id uint, n
 	}
 
 	// Check if appointment can be completed
-	if appointment.Status != model.AppointmentStatusConfirmed {
-		return errors.New("only confirmed appointments can be completed")
+	if appointment.Status == model.AppointmentStatusCancelled {
+		return errors.New("cannot complete a cancelled appointment")
 	}
 
-	// Update status and notes
+	if appointment.Status == model.AppointmentStatusCompleted {
+		return errors.New("appointment is already marked as completed")
+	}
+
+	// Check if appointment date has passed
+	if time.Now().Before(appointment.ScheduledStart) {
+		return errors.New("cannot complete an appointment before its scheduled time")
+	}
+
+	// Update status
 	appointment.Status = model.AppointmentStatusCompleted
 	appointment.Notes = notes
+
 	return s.appointmentRepo.Update(ctx, appointment)
 }

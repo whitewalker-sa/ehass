@@ -43,13 +43,13 @@ type PatientRepository interface {
 	Delete(ctx context.Context, id uint) error
 }
 
-// AppointmentRepository defines operations for appointment data access
+// AppointmentRepository defines the repository interface for appointment operations
 type AppointmentRepository interface {
 	Create(ctx context.Context, appointment *model.Appointment) error
 	FindByID(ctx context.Context, id uint) (*model.Appointment, error)
 	FindByPatientID(ctx context.Context, patientID uint, limit, offset int) ([]*model.Appointment, int64, error)
 	FindByDoctorID(ctx context.Context, doctorID uint, limit, offset int) ([]*model.Appointment, int64, error)
-	FindByDateRange(ctx context.Context, doctorID uint, start, end string, limit, offset int) ([]*model.Appointment, int64, error)
+	FindByDateRange(ctx context.Context, doctorID uint, startDate, endDate string, limit, offset int) ([]*model.Appointment, int64, error)
 	Update(ctx context.Context, appointment *model.Appointment) error
 	Delete(ctx context.Context, id uint) error
 }

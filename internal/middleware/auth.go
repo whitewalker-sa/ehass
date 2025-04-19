@@ -9,9 +9,11 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/whitewalker-sa/ehass/internal/config"
 	"github.com/whitewalker-sa/ehass/internal/model"
+	"github.com/whitewalker-sa/ehass/internal/service"
+	"go.uber.org/zap"
 )
 
-// AuthMiddleware creates a middleware for authentication
+// AuthMiddleware creates a middleware for authentication using direct JWT validation
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get authorization header
@@ -79,6 +81,53 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		c.Set("userID", uint(userID))
 		c.Set("userEmail", email)
 		c.Set("userRole", model.Role(role))
+
+		c.Next()
+	}
+}
+
+// NewAuthMiddleware creates a middleware for authentication using the AuthService
+func NewAuthMiddleware(authService service.AuthService, logger *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		logger.Debug("Processing authentication")
+
+		// Get authorization header
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			logger.Warn("Missing authorization header")
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authorization header required"})
+			return
+		}
+
+		// Check for Bearer prefix
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			logger.Warn("Invalid authorization header format")
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header format"})
+			return
+		}
+
+		// Extract token
+		tokenString := parts[1]
+
+		// Validate token using AuthService
+		user, err := authService.ValidateToken(c.Request.Context(), tokenString)
+		if err != nil {
+			logger.Warn("Token validation failed", zap.Error(err))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			return
+		}
+
+		// Set user in context for downstream handlers
+		c.Set("user", user)
+		c.Set("userID", user.ID)
+		c.Set("email", user.Email)
+		c.Set("role", user.Role)
+
+		logger.Debug("Authentication successful", 
+			zap.Uint("userID", user.ID), 
+			zap.String("email", user.Email),
+			zap.String("role", string(user.Role)))
 
 		c.Next()
 	}

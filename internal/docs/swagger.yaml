@@ -72,22 +72,66 @@ definitions:
     - scheduled_end
     - scheduled_start
     type: object
-  handler.loginRequest:
+  handler.createDoctorRequest:
     properties:
-      email:
+      bio:
         type: string
-      password:
+      designation:
+        type: string
+      education:
+        type: string
+      experience:
+        type: integer
+      license_no:
+        type: string
+      specialty:
         type: string
     required:
-    - email
-    - password
+    - license_no
+    - specialty
     type: object
-  handler.loginResponse:
+  handler.createPatientRequest:
     properties:
-      token:
+      allergies:
         type: string
-      user:
-        $ref: '#/definitions/handler.userResponse'
+      blood_group:
+        type: string
+      current_medication:
+        type: string
+      date_of_birth:
+        type: string
+      emergency_contact:
+        type: string
+      gender:
+        type: string
+      medical_history:
+        type: string
+    required:
+    - date_of_birth
+    - gender
+    type: object
+  handler.doctorResponse:
+    properties:
+      bio:
+        type: string
+      designation:
+        type: string
+      education:
+        type: string
+      email:
+        type: string
+      experience:
+        type: integer
+      id:
+        type: integer
+      license_no:
+        type: string
+      name:
+        type: string
+      specialty:
+        type: string
+      user_id:
+        type: integer
     type: object
   handler.paginatedAppointmentsResponse:
     properties:
@@ -102,26 +146,30 @@ definitions:
       total_count:
         type: integer
     type: object
-  handler.registerRequest:
+  handler.patientResponse:
     properties:
-      address:
+      allergies:
+        type: string
+      blood_group:
+        type: string
+      current_medication:
+        type: string
+      date_of_birth:
         type: string
       email:
         type: string
+      emergency_contact:
+        type: string
+      gender:
+        type: string
+      id:
+        type: integer
+      medical_history:
+        type: string
       name:
         type: string
-      password:
-        minLength: 8
-        type: string
-      phone:
-        type: string
-      role:
-        type: string
-    required:
-    - email
-    - name
-    - password
-    - role
+      user_id:
+        type: integer
     type: object
   handler.updateAppointmentRequest:
     properties:
@@ -139,6 +187,38 @@ definitions:
         type: string
       type:
         description: in_person, video, phone
+        type: string
+    type: object
+  handler.updateDoctorRequest:
+    properties:
+      bio:
+        type: string
+      designation:
+        type: string
+      education:
+        type: string
+      experience:
+        type: integer
+      license_no:
+        type: string
+      specialty:
+        type: string
+    type: object
+  handler.updatePatientRequest:
+    properties:
+      allergies:
+        type: string
+      blood_group:
+        type: string
+      current_medication:
+        type: string
+      date_of_birth:
+        type: string
+      emergency_contact:
+        type: string
+      gender:
+        type: string
+      medical_history:
         type: string
     type: object
   handler.updateProfileRequest:
@@ -472,25 +552,56 @@ paths:
       summary: Complete appointment
       tags:
       - appointments
-  /auth/login:
-    post:
-      consumes:
-      - application/json
-      description: Authenticate user and return JWT token
+  /doctors:
+    get:
+      description: Get a paginated list of all doctors
       parameters:
-      - description: Login Credentials
-        in: body
-        name: login
-        required: true
-        schema:
-          $ref: '#/definitions/handler.loginRequest'
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: Successful login
+          description: List of doctors
           schema:
-            $ref: '#/definitions/handler.loginResponse'
+            items:
+              $ref: '#/definitions/handler.doctorResponse'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List all doctors
+      tags:
+      - doctors
+    post:
+      consumes:
+      - application/json
+      description: Create a new doctor profile
+      parameters:
+      - description: Doctor Information
+        in: body
+        name: doctor
+        required: true
+        schema:
+          $ref: '#/definitions/handler.createDoctorRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created doctor profile
+          schema:
+            $ref: '#/definitions/handler.doctorResponse'
         "400":
           description: Bad request
           schema:
@@ -509,44 +620,11 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Login user
+      security:
+      - BearerAuth: []
+      summary: Create doctor profile
       tags:
-      - auth
-  /auth/register:
-    post:
-      consumes:
-      - application/json
-      description: Register a new user with email and password
-      parameters:
-      - description: User Registration
-        in: body
-        name: user
-        required: true
-        schema:
-          $ref: '#/definitions/handler.registerRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: User registered successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Register a new user
-      tags:
-      - auth
+      - doctors
   /doctors/{doctor_id}/appointments:
     get:
       consumes:
@@ -659,6 +737,388 @@ paths:
       tags:
       - appointments
       - doctors
+  /doctors/{id}:
+    delete:
+      description: Delete a doctor profile by ID
+      parameters:
+      - description: Doctor ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete doctor profile
+      tags:
+      - doctors
+    get:
+      description: Get a doctor profile by ID
+      parameters:
+      - description: Doctor ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Doctor profile
+          schema:
+            $ref: '#/definitions/handler.doctorResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get doctor profile
+      tags:
+      - doctors
+    put:
+      consumes:
+      - application/json
+      description: Update an existing doctor profile
+      parameters:
+      - description: Doctor ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Doctor Information
+        in: body
+        name: doctor
+        required: true
+        schema:
+          $ref: '#/definitions/handler.updateDoctorRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated doctor profile
+          schema:
+            $ref: '#/definitions/handler.doctorResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update doctor profile
+      tags:
+      - doctors
+  /doctors/specialty/{specialty}:
+    get:
+      description: Get a paginated list of doctors by specialty
+      parameters:
+      - description: Specialty
+        in: path
+        name: specialty
+        required: true
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of doctors
+          schema:
+            items:
+              $ref: '#/definitions/handler.doctorResponse'
+            type: array
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List doctors by specialty
+      tags:
+      - doctors
+  /doctors/user/{userId}:
+    get:
+      description: Get a doctor profile by user ID
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Doctor profile
+          schema:
+            $ref: '#/definitions/handler.doctorResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get doctor profile by user ID
+      tags:
+      - doctors
+  /patients:
+    post:
+      consumes:
+      - application/json
+      description: Create a new patient profile
+      parameters:
+      - description: Patient Information
+        in: body
+        name: patient
+        required: true
+        schema:
+          $ref: '#/definitions/handler.createPatientRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created patient profile
+          schema:
+            $ref: '#/definitions/handler.patientResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create patient profile
+      tags:
+      - patients
+  /patients/{id}:
+    delete:
+      description: Delete a patient profile by ID
+      parameters:
+      - description: Patient ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete patient profile
+      tags:
+      - patients
+    get:
+      description: Get a patient profile by ID
+      parameters:
+      - description: Patient ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Patient profile
+          schema:
+            $ref: '#/definitions/handler.patientResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get patient profile
+      tags:
+      - patients
+    put:
+      consumes:
+      - application/json
+      description: Update an existing patient profile
+      parameters:
+      - description: Patient ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Patient Information
+        in: body
+        name: patient
+        required: true
+        schema:
+          $ref: '#/definitions/handler.updatePatientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated patient profile
+          schema:
+            $ref: '#/definitions/handler.patientResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update patient profile
+      tags:
+      - patients
   /patients/{patient_id}/appointments:
     get:
       consumes:
@@ -710,6 +1170,43 @@ paths:
       summary: Get patient appointments
       tags:
       - appointments
+      - patients
+  /patients/user/{userId}:
+    get:
+      description: Get a patient profile by user ID
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Patient profile
+          schema:
+            $ref: '#/definitions/handler.patientResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get patient profile by user ID
+      tags:
       - patients
   /users/change-password:
     put:

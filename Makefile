@@ -47,6 +47,9 @@ run-prod:
 .PHONY: run-db
 run-db:
 	docker compose -f docker-compose.yml up -d postgres
+	@echo "Waiting for PostgreSQL to fully initialize..."
+	@sleep 5
+	$(MAKE) migrate
 
 # Stop running Docker containers
 .PHONY: stop
@@ -58,10 +61,36 @@ stop:
 init:
 	docker run --rm -v $(PWD):/app -w /app golang:$(GO_VERSION) go mod tidy
 
+# Run database migrations
+.PHONY: migrate
+migrate:
+	@echo "Running database migrations..."
+	docker compose -f docker-compose.yml exec -T dev go run cmd/server/main.go migrate || \
+	docker run --rm --network=host -v $(PWD):/app -w /app golang:$(GO_VERSION) \
+		go run cmd/server/main.go migrate
+
+# Create a new migration file
+.PHONY: migration-create
+migration-create:
+	@read -p "Enter migration name: " name; \
+	timestamp=$$(date +%Y%m%d%H%M%S); \
+	mkdir -p internal/migrations; \
+	touch internal/migrations/$${timestamp}_$${name}.go; \
+	echo "package migrations\n\nfunc init() {\n\tregisterMigration(\"$${timestamp}_$${name}\", up$${timestamp}, down$${timestamp})\n}\n\nfunc up$${timestamp}(tx *gorm.DB) error {\n\t// TODO: Implement migration\n\treturn nil\n}\n\nfunc down$${timestamp}(tx *gorm.DB) error {\n\t// TODO: Implement rollback\n\treturn nil\n}" > internal/migrations/$${timestamp}_$${name}.go; \
+	echo "Created migration file: internal/migrations/$${timestamp}_$${name}.go"
+
+# Roll back the last migration
+.PHONY: migrate-rollback
+migrate-rollback:
+	@echo "Rolling back the last migration..."
+	docker compose -f docker-compose.yml exec -T dev go run cmd/server/main.go migrate rollback || \
+	docker run --rm --network=host -v $(PWD):/app -w /app golang:$(GO_VERSION) \
+		go run cmd/server/main.go migrate rollback
+
 # Generate Swagger documentation
 .PHONY: swagger
 swagger:
-	docker run --rm -v $(PWD):/app -w /app -e GOPATH=/go quay.io/goswagger/swagger generate spec -o ./internal/docs/swagger.json --scan-models
+	docker run --rm -v $(PWD):/app -w /app quay.io/goswagger/swagger generate spec -o ./internal/docs/swagger.json --scan-models
 	@echo "Swagger docs generated at ./internal/docs/swagger.json"
 
 # Run the swag tool to generate Swagger docs (requires swag installed)

@@ -120,6 +120,60 @@ func (s *userService) ChangePassword(ctx context.Context, userID uint, oldPasswo
 	return s.userRepo.Update(ctx, user)
 }
 
+// DeleteUser deletes a user by ID
+func (s *userService) DeleteUser(ctx context.Context, id uint) error {
+	return s.userRepo.Delete(ctx, id)
+}
+
+// UpdateUserProfile updates a user's profile information
+func (s *userService) UpdateUserProfile(ctx context.Context, id uint, name, phone, address string) (*model.User, error) {
+	// Find user
+	user, err := s.userRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update fields
+	if name != "" {
+		user.Name = name
+	}
+	if phone != "" {
+		user.Phone = phone
+	}
+	if address != "" {
+		user.Address = address
+	}
+
+	// Save changes
+	err = s.userRepo.Update(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+// UpdateAvatar updates a user's avatar URL
+func (s *userService) UpdateAvatar(ctx context.Context, id uint, avatarURL string) (*model.User, error) {
+	// Find user
+	user, err := s.userRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update avatar URL
+	user.Avatar = avatarURL
+
+	// Save changes
+	err = s.userRepo.Update(ctx, user)
+	if err != nil {
+		s.logger.Error("Failed to update avatar", zap.Error(err))
+		return nil, errors.New("failed to update avatar")
+	}
+
+	return user, nil
+}
+
 // generateToken generates a JWT token for authentication
 func (s *userService) generateToken(user *model.User) (string, error) {
 	// Create claims

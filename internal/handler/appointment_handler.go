@@ -45,32 +45,34 @@ func (h *AppointmentHandler) CreateAppointment(c *gin.Context) {
 		return
 	}
 
-	// Parse appointment times
-	scheduledStart, err := time.Parse(time.RFC3339, req.ScheduledStart)
+	// Parse appointment times for validation
+	_, err := time.Parse(time.RFC3339, req.ScheduledStart)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scheduled start time format"})
 		return
 	}
 
-	scheduledEnd, err := time.Parse(time.RFC3339, req.ScheduledEnd)
+	_, err = time.Parse(time.RFC3339, req.ScheduledEnd)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scheduled end time format"})
 		return
 	}
 
-	// Create appointment model
-	appointment := &model.Appointment{
-		PatientID:      req.PatientID,
-		DoctorID:       req.DoctorID,
-		ScheduledStart: scheduledStart,
-		ScheduledEnd:   scheduledEnd,
-		Reason:         req.Reason,
-		Type:           req.Type,
-		Notes:          req.Notes,
-	}
+	// Extract date and time from RFC3339 format
+	startTime, _ := time.Parse(time.RFC3339, req.ScheduledStart)
+	date := startTime.Format("2006-01-02")
+	timeStr := startTime.Format("15:04")
 
 	// Create appointment
-	if err := h.appointmentService.CreateAppointment(c.Request.Context(), appointment); err != nil {
+	appointment, err := h.appointmentService.CreateAppointment(
+		c.Request.Context(),
+		req.PatientID,
+		req.DoctorID,
+		date,
+		timeStr,
+		req.Reason,
+	)
+	if err != nil {
 		h.logger.Error("Failed to create appointment", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -249,7 +251,7 @@ func (h *AppointmentHandler) GetDoctorSchedule(c *gin.Context) {
 	page, pageSize := h.getPaginationParams(c)
 
 	// Get appointments
-	appointments, totalCount, err := h.appointmentService.GetDoctorSchedule(
+	appointments, totalCount, err := h.appointmentService.GetDoctorAppointmentsByDateRange(
 		c.Request.Context(),
 		uint(doctorID),
 		startDate,
@@ -301,62 +303,43 @@ func (h *AppointmentHandler) UpdateAppointment(c *gin.Context) {
 		return
 	}
 
-	// Get existing appointment
-	appointment, err := h.appointmentService.GetAppointmentByID(c.Request.Context(), uint(id))
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Appointment not found"})
-		return
-	}
-
 	var req updateAppointmentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
 		return
 	}
 
-	// Update fields if provided
+	// Extract date and time if provided
+	var date, timeStr string
 	if req.ScheduledStart != "" {
-		scheduledStart, err := time.Parse(time.RFC3339, req.ScheduledStart)
+		startTime, err := time.Parse(time.RFC3339, req.ScheduledStart)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scheduled start time format"})
 			return
 		}
-		appointment.ScheduledStart = scheduledStart
-	}
-
-	if req.ScheduledEnd != "" {
-		scheduledEnd, err := time.Parse(time.RFC3339, req.ScheduledEnd)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scheduled end time format"})
-			return
-		}
-		appointment.ScheduledEnd = scheduledEnd
-	}
-
-	if req.Reason != "" {
-		appointment.Reason = req.Reason
-	}
-
-	if req.Notes != "" {
-		appointment.Notes = req.Notes
-	}
-
-	if req.Type != "" {
-		appointment.Type = req.Type
-	}
-
-	if req.Status != "" {
-		appointment.Status = model.AppointmentStatus(req.Status)
+		date = startTime.Format("2006-01-02")
+		timeStr = startTime.Format("15:04")
 	}
 
 	// Update appointment
-	if err := h.appointmentService.UpdateAppointment(c.Request.Context(), appointment); err != nil {
+	appointment, err := h.appointmentService.UpdateAppointment(
+		c.Request.Context(),
+		uint(id),
+		date,
+		timeStr,
+		req.Status,
+		req.Reason,
+	)
+	if err != nil {
 		h.logger.Error("Failed to update appointment", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Appointment updated successfully"})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Appointment updated successfully",
+		"id":      appointment.ID,
+	})
 }
 
 // CancelAppointment godoc
@@ -422,7 +405,7 @@ func (h *AppointmentHandler) CompleteAppointment(c *gin.Context) {
 		return
 	}
 
-	// Complete appointment
+	// Call the dedicated CompleteAppointment service method
 	if err := h.appointmentService.CompleteAppointment(c.Request.Context(), uint(id), req.Notes); err != nil {
 		h.logger.Error("Failed to complete appointment", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

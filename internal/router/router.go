@@ -2,119 +2,89 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/whitewalker-sa/ehass/internal/config"
 	"github.com/whitewalker-sa/ehass/internal/handler"
-	"github.com/whitewalker-sa/ehass/internal/middleware"
-	"github.com/whitewalker-sa/ehass/internal/model"
-	"github.com/whitewalker-sa/ehass/internal/repository"
-	"github.com/whitewalker-sa/ehass/internal/service"
-	"github.com/whitewalker-sa/ehass/pkg/database"
-	"go.uber.org/zap"
-
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-// Setup initializes the router and sets up all routes and middleware
-func Setup(cfg *config.Config, logger *zap.Logger) (*gin.Engine, func(), error) {
-	// Create router with default middleware
-	r := gin.New()
-	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
+// SetupRouter sets up the API routes
+func SetupRouter(
+	authHandler *handler.AuthHandler,
+	userHandler *handler.UserHandler,
+	doctorHandler *handler.DoctorHandler,
+	patientHandler *handler.PatientHandler,
+	appointmentHandler *handler.AppointmentHandler,
+	authMiddleware gin.HandlerFunc,
+) *gin.Engine {
+	r := gin.Default()
 
-	// Initialize database
-	db, err := database.NewDatabase(cfg, logger)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Auto migrate database schema
-	if err := database.AutoMigrate(db, logger); err != nil {
-		return nil, nil, err
-	}
-
-	// Initialize repositories
-	userRepo := repository.NewUserRepository(db)
-	doctorRepo := repository.NewDoctorRepository(db)
-	patientRepo := repository.NewPatientRepository(db)
-	appointmentRepo := repository.NewAppointmentRepository(db)
-
-	// Initialize services
-	userService := service.NewUserService(userRepo, cfg, logger)
-	appointmentService := service.NewAppointmentService(appointmentRepo, doctorRepo, patientRepo, logger)
-
-	// Initialize handlers
-	userHandler := handler.NewUserHandler(userService, logger)
-	appointmentHandler := handler.NewAppointmentHandler(appointmentService, logger)
-
-	// Root API group
-	api := r.Group("/api")
-
-	// Health check endpoint at root API level
-	api.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-
-	// API v1 group
-	v1 := api.Group("/v1")
-
-	// Authentication routes (public)
-	auth := v1.Group("/auth")
+	// Public routes
+	v1 := r.Group("/api/v1")
 	{
-		auth.POST("/register", userHandler.Register)
-		auth.POST("/login", userHandler.Login)
+		// Authentication routes
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/register", authHandler.Register)
+			auth.POST("/login", authHandler.Login)
+			auth.POST("/oauth/login", authHandler.OAuthLogin)
+			auth.POST("/verify-email", authHandler.VerifyEmail)
+			auth.POST("/request-password-reset", authHandler.RequestPasswordReset)
+			auth.POST("/reset-password", authHandler.ResetPassword)
+			auth.POST("/refresh-token", authHandler.RefreshToken)
+			auth.POST("/verify-2fa", authHandler.Verify2FA)
+		}
+
+		// Protected routes
+		protected := v1.Group("/", authMiddleware)
+		{
+			// User routes
+			users := protected.Group("/users")
+			{
+				users.GET("/:id", userHandler.GetUserByID) // Changed to match actual implementation
+				users.PUT("/:id", userHandler.UpdateProfile)
+				users.PUT("/:id/change-password", userHandler.ChangePassword)
+			}
+
+			// Authentication management routes
+			authManagement := protected.Group("/auth")
+			{
+				authManagement.POST("/logout", authHandler.Logout)
+				authManagement.POST("/setup-2fa", authHandler.Setup2FA)
+				authManagement.POST("/enable-2fa", authHandler.Enable2FA)
+				authManagement.POST("/disable-2fa", authHandler.Disable2FA)
+				authManagement.POST("/link-oauth", authHandler.LinkOAuth)
+			}
+
+			// Doctor routes
+			doctors := protected.Group("/doctors")
+			{
+				doctors.POST("", doctorHandler.CreateDoctor)
+				doctors.GET("", doctorHandler.ListDoctors)
+				doctors.GET("/:id", doctorHandler.GetDoctor)
+				doctors.PUT("/:id", doctorHandler.UpdateDoctor)
+				doctors.GET("/specialty/:specialty", doctorHandler.ListDoctorsBySpecialty)
+				doctors.GET("/user/:userID", doctorHandler.GetDoctorByUser)
+			}
+
+			// Patient routes
+			patients := protected.Group("/patients")
+			{
+				patients.POST("", patientHandler.CreatePatient)
+				patients.GET("/:id", patientHandler.GetPatient)
+				patients.PUT("/:id", patientHandler.UpdatePatient)
+				patients.GET("/user/:userID", patientHandler.GetPatientByUser)
+			}
+
+			// Appointment routes
+			appointments := protected.Group("/appointments")
+			{
+				appointments.POST("", appointmentHandler.CreateAppointment)
+				appointments.GET("/:id", appointmentHandler.GetAppointmentByID)
+				appointments.PUT("/:id", appointmentHandler.UpdateAppointment)
+				appointments.GET("/patient/:patientID", appointmentHandler.GetPatientAppointments)
+				appointments.GET("/doctor/:doctorID", appointmentHandler.GetDoctorAppointments)
+				appointments.GET("/doctor/:doctorID/schedule", appointmentHandler.GetDoctorSchedule)
+			}
+		}
 	}
 
-	// Protected routes - all require authentication
-	protected := v1.Group("")
-	protected.Use(middleware.AuthMiddleware(cfg))
-
-	// User routes
-	users := protected.Group("/users")
-	{
-		users.GET("/profile", userHandler.GetProfile)
-		users.PUT("/profile", userHandler.UpdateProfile)
-		users.PUT("/change-password", userHandler.ChangePassword)
-	}
-
-	// Appointment routes
-	appointments := protected.Group("/appointments")
-	{
-		appointments.POST("", appointmentHandler.CreateAppointment)
-		appointments.GET("/:id", appointmentHandler.GetAppointmentByID)
-		appointments.PUT("/:id", appointmentHandler.UpdateAppointment)
-		appointments.POST("/:id/cancel", appointmentHandler.CancelAppointment)
-		appointments.POST("/:id/complete", appointmentHandler.CompleteAppointment)
-	}
-
-	// Patient routes
-	patients := protected.Group("/patients")
-	{
-		patients.GET("/:patient_id/appointments", appointmentHandler.GetPatientAppointments)
-	}
-
-	// Doctor routes
-	doctors := protected.Group("/doctors")
-	{
-		doctors.GET("/:doctor_id/appointments", appointmentHandler.GetDoctorAppointments)
-		doctors.GET("/:doctor_id/schedule", appointmentHandler.GetDoctorSchedule)
-	}
-
-	// Admin routes (restricted to admin users)
-	admin := protected.Group("/admin")
-	admin.Use(middleware.RoleMiddleware(model.RoleAdmin))
-	{
-		admin.GET("/users/:id", userHandler.GetUserByID)
-	}
-
-	// Swagger docs
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	// Cleanup function
-	cleanup := func() {
-		logger.Info("Cleaning up resources")
-		// Any cleanup logic here
-	}
-
-	return r, cleanup, nil
+	return r
 }

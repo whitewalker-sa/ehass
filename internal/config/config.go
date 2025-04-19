@@ -12,6 +12,8 @@ type Config struct {
 	Database DatabaseConfig
 	Auth     AuthConfig
 	Redis    RedisConfig
+	OAuth    OAuthConfig
+	Email    EmailConfig
 }
 
 // ServerConfig holds server-specific configuration
@@ -20,6 +22,7 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
+	BaseURL      string
 }
 
 // DatabaseConfig holds database connection details
@@ -52,6 +55,35 @@ type RedisConfig struct {
 	DB       int
 }
 
+// OAuthConfig holds OAuth provider configurations
+type OAuthConfig struct {
+	GitHub GitHubConfig
+	Google GoogleConfig
+}
+
+// GitHubConfig holds GitHub OAuth configuration
+type GitHubConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
+// GoogleConfig holds Google OAuth configuration
+type GoogleConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
+// EmailConfig holds email service configuration
+type EmailConfig struct {
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	FromEmail    string
+}
+
 // Load loads configuration from file and environment variables
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
@@ -82,6 +114,7 @@ func setDefaults() {
 	viper.SetDefault("server.readTimeout", time.Second*10)
 	viper.SetDefault("server.writeTimeout", time.Second*10)
 	viper.SetDefault("server.idleTimeout", time.Second*60)
+	viper.SetDefault("server.baseURL", "http://localhost:8080")
 
 	// Database defaults
 	viper.SetDefault("database.driver", "mysql")
@@ -100,4 +133,8 @@ func setDefaults() {
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", "6379")
 	viper.SetDefault("redis.db", 0)
+
+	// Email defaults
+	viper.SetDefault("email.smtpPort", 587)
+	viper.SetDefault("email.fromEmail", "noreply@ehass.com")
 }

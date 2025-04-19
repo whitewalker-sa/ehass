@@ -11,7 +11,9 @@ import (
 
 	"github.com/whitewalker-sa/ehass/internal/config"
 	"github.com/whitewalker-sa/ehass/internal/router"
+	"github.com/whitewalker-sa/ehass/pkg/database"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -26,6 +28,12 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Fatal("Failed to load configuration", zap.Error(err))
+	}
+
+	// Check if running migration commands
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		handleMigrations(cfg, logger, os.Args)
+		return
 	}
 
 	// Setup router with all dependencies
@@ -68,4 +76,45 @@ func main() {
 	}
 
 	logger.Info("Server exiting")
+}
+
+// handleMigrations runs database migrations based on command line arguments
+func handleMigrations(cfg *config.Config, logger *zap.Logger, args []string) {
+	logger.Info("Setting up database connection for migrations")
+	db, err := database.NewDatabase(cfg, logger)
+	if err != nil {
+		logger.Fatal("Failed to connect to database", zap.Error(err))
+		return
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Fatal("Failed to get database connection", zap.Error(err))
+		return
+	}
+	defer sqlDB.Close()
+
+	// Determine migration action
+	isRollback := len(args) > 2 && args[2] == "rollback"
+
+	if isRollback {
+		logger.Info("Rolling back the last migration")
+		// For simplicity, we don't implement actual rollback logic here
+		// In a real app, you would track migrations in a migrations table
+		logger.Info("Migration rollback is not implemented")
+	} else {
+		logger.Info("Running migrations")
+		if err := runMigrations(db, logger); err != nil {
+			logger.Fatal("Migration failed", zap.Error(err))
+			return
+		}
+		logger.Info("Migrations completed successfully")
+	}
+}
+
+// runMigrations performs the actual database migrations
+func runMigrations(db *gorm.DB, logger *zap.Logger) error {
+	// Auto-migrate all models
+	logger.Info("Running auto-migrations for all models")
+	return database.AutoMigrate(db, logger)
 }
