@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/goccy/go-json"
 	"github.com/whitewalker-sa/ehass/internal/model"
 )
 
