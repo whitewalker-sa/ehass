@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -13,15 +14,13 @@ import (
 	"github.com/whitewalker-sa/ehass/internal/router"
 	"github.com/whitewalker-sa/ehass/pkg/database"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"gorm.io/gorm"
 )
 
 func main() {
-	// Initialize logger
-	logger, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
+	// Initialize logger with container-friendly configuration
+	logger := initLogger()
 	defer logger.Sync()
 
 	// Load configuration
@@ -76,6 +75,95 @@ func main() {
 	}
 
 	logger.Info("Server exiting")
+}
+
+// initLogger initializes a container-friendly logger with JSON output and configurable log level
+func initLogger() *zap.Logger {
+	logLevel := zapcore.InfoLevel
+	if level, exists := os.LookupEnv("LOG_LEVEL"); exists {
+		if err := logLevel.UnmarshalText([]byte(strings.ToLower(level))); err != nil {
+			log.Fatalf("Invalid log level: %v", err)
+		}
+	}
+
+	// Determine if sampling should be enabled
+	samplingEnabled := false
+	if samplingStr, exists := os.LookupEnv("LOG_SAMPLING_ENABLED"); exists && strings.ToLower(samplingStr) == "true" {
+		samplingEnabled = true
+	}
+
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "timestamp",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		FunctionKey:    zapcore.OmitKey,
+		MessageKey:     "message",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+
+	config := zap.Config{
+		Level:            zap.NewAtomicLevelAt(logLevel),
+		Development:      false,
+		Encoding:         "json",
+		EncoderConfig:    encoderConfig,
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
+		InitialFields: map[string]interface{}{
+			"service": "ehass-api",
+			"version": getAppVersion(),
+			"env":     getEnvironment(),
+		},
+	}
+
+	// Configure sampling if enabled
+	if samplingEnabled {
+		config.Sampling = &zap.SamplingConfig{
+			Initial:    100, // Log the first 100 entries at each level
+			Thereafter: 100, // Sample 1/100 after that
+		}
+	}
+
+	logger, err := config.Build(
+		zap.AddCallerSkip(1),
+		zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+			return zapcore.NewSamplerWithOptions(core, time.Second, 100, 100)
+		}),
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Log startup information
+	logger.Info("Logger initialized",
+		zap.String("level", logLevel.String()),
+		zap.Bool("sampling_enabled", samplingEnabled),
+	)
+
+	return logger
+}
+
+// getAppVersion returns the application version
+func getAppVersion() string {
+	version := os.Getenv("APP_VERSION")
+	if version == "" {
+		return "dev"
+	}
+	return version
+}
+
+// getEnvironment returns the current environment (development, staging, production)
+func getEnvironment() string {
+	env := os.Getenv("APP_ENV")
+	if env == "" {
+		return "development"
+	}
+	return env
 }
 
 // handleMigrations runs database migrations based on command line arguments

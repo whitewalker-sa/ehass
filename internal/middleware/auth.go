@@ -124,8 +124,8 @@ func NewAuthMiddleware(authService service.AuthService, logger *zap.Logger) gin.
 		c.Set("email", user.Email)
 		c.Set("role", user.Role)
 
-		logger.Debug("Authentication successful", 
-			zap.Uint("userID", user.ID), 
+		logger.Debug("Authentication successful",
+			zap.Uint("userID", user.ID),
 			zap.String("email", user.Email),
 			zap.String("role", string(user.Role)))
 
